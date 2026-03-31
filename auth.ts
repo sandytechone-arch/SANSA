@@ -1,62 +1,34 @@
-import jwt from "jsonwebtoken";
-import crypto from "crypto";
-import { type Request, type Response } from "express";
-import type { AuthUser } from "@workspace/api-zod";
+import { sql } from "drizzle-orm";
+import { index, jsonb, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
 
-const JWT_SECRET = process.env.JWT_SECRET || (() => {
-  console.warn("WARNING: JWT_SECRET not set. Using random secret - tokens will not persist across restarts.");
-  return crypto.randomBytes(64).toString("hex");
-})();
-export const SESSION_COOKIE = "token";
-export const SESSION_TTL = 24 * 60 * 60 * 1000;
+export const sessionsTable = pgTable(
+  "sessions",
+  {
+    sid: varchar("sid").primaryKey(),
+    sess: jsonb("sess").notNull(),
+    expire: timestamp("expire").notNull(),
+  },
+  (table) => [index("IDX_session_expire").on(table.expire)],
+);
 
-export interface JwtPayload {
-  userId: string;
-  email: string | null;
-  firstName: string | null;
-  lastName: string | null;
-  profileImageUrl: string | null;
-  role: string;
-}
+export const usersTable = pgTable("users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: varchar("email").unique(),
+  firstName: varchar("first_name"),
+  lastName: varchar("last_name"),
+  profileImageUrl: varchar("profile_image_url"),
+  passwordHash: varchar("password_hash"),
+  role: varchar("role", { enum: ["user", "admin", "special"] }).notNull().default("user"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
 
-export function signToken(user: AuthUser): string {
-  const payload: JwtPayload = {
-    userId: user.id,
-    email: user.email,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    profileImageUrl: user.profileImageUrl,
-    role: user.role,
-  };
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: "24h" });
-}
+export const siteConfigTable = pgTable("site_config", {
+  key: varchar("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
 
-export function verifyToken(token: string): JwtPayload | null {
-  try {
-    return jwt.verify(token, JWT_SECRET) as JwtPayload;
-  } catch {
-    return null;
-  }
-}
-
-export function setTokenCookie(res: Response, token: string) {
-  res.cookie(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_TTL,
-  });
-}
-
-export function clearTokenCookie(res: Response) {
-  res.clearCookie(SESSION_COOKIE, { path: "/" });
-}
-
-export function getToken(req: Request): string | undefined {
-  const authHeader = req.headers["authorization"];
-  if (authHeader?.startsWith("Bearer ")) {
-    return authHeader.slice(7);
-  }
-  return req.cookies?.[SESSION_COOKIE];
-}
+export type UpsertUser = typeof usersTable.$inferInsert;
+export type User = typeof usersTable.$inferSelect;
+export type SiteConfig = typeof siteConfigTable.$inferSelect;

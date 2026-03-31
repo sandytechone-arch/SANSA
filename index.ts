@@ -1,8 +1,4 @@
-import { Router, type IRouter } from "express";
-import conversationsRouter from "./conversations";
-
-const router: IRouter = Router();
-
-router.use("/openai/conversations", conversationsRouter);
-
-export default router;
+export * from "./generated/api";
+export * from "./generated/api.schemas";
+export { setBaseUrl, setAuthTokenGetter } from "./custom-fetch";
+export type { AuthTokenGetter } from "./custom-fetch";
